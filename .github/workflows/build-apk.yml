@@ -2,7 +2,7 @@ name: Compiler et publier l'APK
 
 on:
   push:
-    branches: [main, claude/frigo-malin-flutter-si7ylx]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
