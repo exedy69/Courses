@@ -40,6 +40,11 @@ const _accents = {
 
 /// Minuscules, sans accents, ligatures éclatées, ponctuation → espace,
 /// espaces compressés, pluriel simple (« s » final des mots de 4 lettres ou plus).
+/// Retire les caractères de tête qui feraient d'un texte une formule de tableur
+/// (les noms viennent d'une base publique et finissent dans un Google Sheet).
+String neutraliserFormule(String texte) =>
+    texte.replaceFirst(RegExp(r'^[=+\-@\t\r\n\s]+'), '').trim();
+
 String normaliser(String texte) {
   final b = StringBuffer();
   for (final c in texte.toLowerCase().split('')) {
@@ -65,6 +70,9 @@ class Produit {
   int quantite;
   String? categorie;
   String? photoPath;
+
+  /// Prénom de la personne qui a ajouté le produit (facultatif).
+  String? auteur;
   DateTime dateAjout;
   String updatedAt;
   String? deletedAt;
@@ -78,6 +86,7 @@ class Produit {
     this.quantite = 1,
     this.categorie,
     this.photoPath,
+    this.auteur,
     DateTime? dateAjout,
     String? updatedAt,
     this.deletedAt,
@@ -103,6 +112,7 @@ class Produit {
         'quantite': quantite,
         'categorie': categorie,
         'photo_path': photoPath,
+        'auteur': auteur,
         'date_ajout': dateIso(dateAjout),
         'updated_at': updatedAt,
         'deleted_at': deletedAt,
@@ -117,6 +127,7 @@ class Produit {
         quantite: (m['quantite'] as int?) ?? 1,
         categorie: m['categorie'] as String?,
         photoPath: m['photo_path'] as String?,
+        auteur: m['auteur'] as String?,
         dateAjout: lireDateIso(m['date_ajout'] as String),
         updatedAt: m['updated_at'] as String,
         deletedAt: m['deleted_at'] as String?,
@@ -131,6 +142,7 @@ class Produit {
         quantite: quantite,
         categorie: categorie,
         photoPath: photoPath,
+        auteur: auteur,
         dateAjout: dateAjout,
         updatedAt: updatedAt,
         deletedAt: deletedAt,

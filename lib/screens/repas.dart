@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../db/base_donnees.dart';
 import '../models/produit.dart';
 import '../services/moteur_suggestions.dart';
+import '../services/reglages.dart';
+import '../services/sync_service.dart';
 import '../theme.dart';
 
 class EcranRepas extends StatefulWidget {
@@ -169,6 +171,31 @@ class _CarteSuggestionState extends State<_CarteSuggestion> {
                   ),
               ],
             ),
+            if (s.manquants.isNotEmpty)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final messager = ScaffoldMessenger.of(context);
+                    var ajoutes = 0;
+                    for (final m in s.manquants) {
+                      if (await BaseDonnees.instance
+                          .ajouterCourse(m, auteur: Reglages.instance.prenomOuNull)) {
+                        ajoutes++;
+                      }
+                    }
+                    SyncService.instance.planifier();
+                    messager
+                      ..clearSnackBars()
+                      ..showSnackBar(SnackBar(
+                          content: Text(ajoutes == 0
+                              ? 'Déjà dans la liste de courses'
+                              : '$ajoutes article(s) ajouté(s) à la liste de courses')));
+                  },
+                  icon: const Icon(Icons.add_shopping_cart),
+                  label: const Text('Ajouter les manquants aux courses'),
+                ),
+              ),
             const SizedBox(height: 10),
             Text(r.instructions),
             if (r.basiques.isNotEmpty) ...[

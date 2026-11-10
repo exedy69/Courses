@@ -10,28 +10,61 @@ import 'sync_google_sheets.dart';
 
 /// Accès aux données locales pour la synchro (injectable pour les tests).
 abstract class SyncStore {
-  Future<List<Map<String, Object?>>> produitsModifiesDepuis(String? depuis);
-  Future<List<Map<String, Object?>>> catalogueModifieDepuis(String? depuis);
-  Future<List<Map<String, Object?>>> historiqueModifieDepuis(String? depuis);
-  Future<void> appliquerProduitsDistants(List<Map<String, Object?>> l);
-  Future<void> appliquerCatalogueDistant(List<Map<String, Object?>> l);
-  Future<void> appliquerHistoriqueDistant(List<Map<String, Object?>> l);
+  Future<List<Map<String, Object?>>> lignesAEnvoyer(String table);
+  Future<void> marquerEnvoyees(String table, List<Map<String, Object?>> lignes);
+
+  /// Renvoie le nombre de lignes réellement appliquées.
+  Future<int> appliquerDistant(String table, List<Map<String, Object?>> lignes);
+
+  /// Tout renvoyer à la prochaine synchro (changement de Sheet).
+  Future<void> toutMarquerAEnvoyer();
 }
 
 class SyncStoreSqlite implements SyncStore {
-  final BaseDonnees _b = BaseDonnees.instance;
+  SyncStoreSqlite([BaseDonnees? base]) : _b = base ?? BaseDonnees.instance;
+  final BaseDonnees _b;
   @override
-  Future<List<Map<String, Object?>>> produitsModifiesDepuis(String? d) => _b.produitsModifiesDepuis(d);
+  Future<List<Map<String, Object?>>> lignesAEnvoyer(String t) => _b.lignesAEnvoyer(tableSync(t));
   @override
-  Future<List<Map<String, Object?>>> catalogueModifieDepuis(String? d) => _b.catalogueModifieDepuis(d);
+  Future<void> marquerEnvoyees(String t, List<Map<String, Object?>> l) =>
+      _b.marquerEnvoyees(tableSync(t), l);
   @override
-  Future<List<Map<String, Object?>>> historiqueModifieDepuis(String? d) => _b.historiqueModifieDepuis(d);
+  Future<int> appliquerDistant(String t, List<Map<String, Object?>> l) =>
+      _b.appliquerDistant(tableSync(t), l);
   @override
-  Future<void> appliquerProduitsDistants(List<Map<String, Object?>> l) => _b.appliquerProduitsDistants(l);
+  Future<void> toutMarquerAEnvoyer() => _b.toutMarquerAEnvoyer();
+}
+
+/// État persistant de la synchro (injectable pour les tests).
+abstract class EtatSync {
+  bool get actif;
+  String get url;
+  String get token;
+  int get curseur;
+  String? get urlConnue;
+  Future<void> setCurseur(int v);
+  Future<void> setUrlConnue(String v);
+  Future<void> setDernierOk(String iso);
+}
+
+class EtatSyncReglages implements EtatSync {
+  Reglages get _r => Reglages.instance;
   @override
-  Future<void> appliquerCatalogueDistant(List<Map<String, Object?>> l) => _b.appliquerCatalogueDistant(l);
+  bool get actif => _r.syncActif;
   @override
-  Future<void> appliquerHistoriqueDistant(List<Map<String, Object?>> l) => _b.appliquerHistoriqueDistant(l);
+  String get url => _r.syncUrl;
+  @override
+  String get token => _r.syncToken;
+  @override
+  int get curseur => _r.syncCurseur;
+  @override
+  String? get urlConnue => _r.syncUrlConnue;
+  @override
+  Future<void> setCurseur(int v) => _r.setSyncCurseur(v);
+  @override
+  Future<void> setUrlConnue(String v) => _r.setSyncUrlConnue(v);
+  @override
+  Future<void> setDernierOk(String iso) => _r.setSyncDernierOk(iso);
 }
 
 /// Fusion « dernière écriture gagne » sur un jeu de lignes indexées par [cle].
@@ -62,31 +95,34 @@ class SyncService {
   SyncService.pour({
     required this._store,
     required this.fabriqueBackend,
-    this._reglages,
-  });
+    required this._etat,
+    List<String>? tables,
+  }) : tables = tables ?? [for (final t in tablesSync) t.nom];
 
   SyncStore? _store;
-  Reglages? _reglages;
+  EtatSync? _etat;
   SyncBackend Function(String url, String token)? fabriqueBackend;
+  List<String> tables = [for (final t in tablesSync) t.nom];
 
   SyncStore get store => _store ??= SyncStoreSqlite();
-  Reglages get reglages => _reglages ?? Reglages.instance;
+  EtatSync get reglages => _etat ??= EtatSyncReglages();
 
   /// Ligne d'état affichée dans Réglages.
   final ValueNotifier<String> etat = ValueNotifier<String>('');
   bool _enCours = false;
+  bool _encoreUneFois = false;
   Timer? _antiRebond;
 
-  bool get actif => reglages.syncActif && reglages.syncUrl.isNotEmpty && reglages.syncToken.isNotEmpty;
+  bool get actif => reglages.actif && reglages.url.isNotEmpty && reglages.token.isNotEmpty;
 
   SyncBackend _backend() => (fabriqueBackend ??
-      (u, t) => SyncGoogleSheets(url: u, token: t))(reglages.syncUrl, reglages.syncToken);
+      (u, t) => SyncGoogleSheets(url: u, token: t))(reglages.url, reglages.token);
 
-  /// Planifie une synchro dans ~5 s (regroupe plusieurs enregistrements).
+  /// Planifie une synchro dans ~2 s (regroupe plusieurs enregistrements).
   void planifier() {
     if (!actif) return;
     _antiRebond?.cancel();
-    _antiRebond = Timer(const Duration(seconds: 5), () => synchroniser());
+    _antiRebond = Timer(const Duration(seconds: 2), () => synchroniser());
   }
 
   Future<String> tester() async {
@@ -101,39 +137,49 @@ class SyncService {
   }
 
   /// Ne lève jamais d'exception : le résultat va dans [etat].
-  Future<void> synchroniser({bool force = false}) async {
-    if (_enCours) return;
+  /// [complet] demande au serveur de relire tout le Sheet (corrections manuelles).
+  Future<void> synchroniser({bool force = false, bool complet = false}) async {
     if (!force && !actif) return;
+    if (_enCours) {
+      _encoreUneFois = true;
+      return;
+    }
     _enCours = true;
-    etat.value = 'Synchronisation…';
     try {
-      final debutPush = maintenantUtcIso();
-      final sincePush = reglages.syncDernierPush;
-      final produits = await store.produitsModifiesDepuis(sincePush);
-      final catalogue = await store.catalogueModifieDepuis(sincePush);
-      final historique = await store.historiqueModifieDepuis(sincePush);
-
+      // Nouveau Sheet (ou première synchro) : on repart de zéro et on renvoie tout.
+      if (reglages.urlConnue != reglages.url) {
+        await store.toutMarquerAEnvoyer();
+        await reglages.setCurseur(0);
+        await reglages.setUrlConnue(reglages.url);
+      }
+      final envoi = <String, List<Map<String, Object?>>>{};
+      for (final t in tables) {
+        envoi[t] = await store.lignesAEnvoyer(t);
+      }
       final rep = await _backend().echanger(SyncRequete(
-        since: reglages.syncDernierOk ?? '',
-        produits: produits,
-        catalogue: catalogue,
-        historique: historique,
+        curseur: reglages.curseur,
+        complet: complet,
+        tables: envoi,
       ));
-
-      await store.appliquerProduitsDistants(rep.produits);
-      await store.appliquerCatalogueDistant(rep.catalogue);
-      await store.appliquerHistoriqueDistant(rep.historique);
-
-      await reglages.setSyncDernierPush(debutPush);
-      await reglages.setSyncDernierOk(
-          rep.serverTime.isNotEmpty ? rep.serverTime : maintenantUtcIso());
-      etat.value = 'Synchronisé';
+      for (final t in tables) {
+        await store.appliquerDistant(t, rep.tables[t] ?? const []);
+      }
+      for (final t in tables) {
+        await store.marquerEnvoyees(t, envoi[t]!);
+      }
+      await reglages.setCurseur(rep.curseur);
+      await reglages.setDernierOk(maintenantUtcIso());
+      if (etat.value != 'Synchronisé') etat.value = 'Synchronisé';
     } on SyncErreur catch (e) {
       etat.value = 'Échec : ${e.message}';
     } catch (_) {
       etat.value = 'Échec de la synchronisation';
     } finally {
       _enCours = false;
+    }
+    if (_encoreUneFois) {
+      _encoreUneFois = false;
+      await synchroniser();
     }
   }
 }

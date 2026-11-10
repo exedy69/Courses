@@ -1,28 +1,26 @@
 /// Requête de synchronisation (un seul aller-retour).
 class SyncRequete {
-  final String since;
-  final List<Map<String, Object?>> produits;
-  final List<Map<String, Object?>> catalogue;
-  final List<Map<String, Object?>> historique;
-  const SyncRequete({
-    required this.since,
-    required this.produits,
-    required this.catalogue,
-    required this.historique,
-  });
+  /// Dernier numéro d'écriture serveur déjà reçu.
+  final int curseur;
+
+  /// Vrai pour demander au serveur un passage complet (prise en compte des
+  /// corrections faites à la main dans le Sheet, purge).
+  final bool complet;
+
+  /// Lignes locales à envoyer, par nom de table.
+  final Map<String, List<Map<String, Object?>>> tables;
+
+  const SyncRequete({required this.curseur, required this.complet, required this.tables});
 }
 
 class SyncReponse {
-  final List<Map<String, Object?>> produits;
-  final List<Map<String, Object?>> catalogue;
-  final List<Map<String, Object?>> historique;
-  final String serverTime;
-  const SyncReponse({
-    required this.produits,
-    required this.catalogue,
-    required this.historique,
-    required this.serverTime,
-  });
+  /// Lignes dont le numéro d'écriture serveur dépasse le curseur envoyé.
+  final Map<String, List<Map<String, Object?>>> tables;
+
+  /// Nouveau curseur à mémoriser.
+  final int curseur;
+
+  const SyncReponse({required this.tables, required this.curseur});
 }
 
 class SyncErreur implements Exception {

@@ -93,8 +93,9 @@ class CatalogueService {
     if (json['status'] == 0 || prod is! Map) return null;
     String? lire(String cle) {
       final v = prod[cle];
-      if (v is String && v.trim().isNotEmpty) return v.trim();
-      return null;
+      if (v is! String) return null;
+      final propre = neutraliserFormule(v);
+      return propre.isEmpty ? null : propre;
     }
 
     final nom = lire('product_name_fr') ?? lire('product_name');
@@ -110,7 +111,9 @@ class CatalogueService {
       nom: nom,
       marque: marque,
       categorie: categorie,
-      imageUrl: lire('image_front_small_url'),
+      imageUrl: prod['image_front_small_url'] is String
+          ? (prod['image_front_small_url'] as String).trim()
+          : null,
       source: source,
       updatedAt: maintenantUtcIso(),
     );
@@ -120,7 +123,7 @@ class CatalogueService {
   Future<CatalogueItem> enregistrerManuel(String code, String nom) async {
     final item = CatalogueItem(
       codeBarres: code,
-      nom: nom.trim(),
+      nom: neutraliserFormule(nom),
       source: 'manuel',
       updatedAt: maintenantUtcIso(),
     );

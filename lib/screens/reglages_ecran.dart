@@ -5,6 +5,7 @@ import '../services/reglages.dart';
 import '../services/service_notifications.dart';
 import '../services/sync_service.dart';
 import 'fiabilite_xiaomi.dart';
+import 'partage_config.dart';
 
 class EcranReglages extends StatefulWidget {
   const EcranReglages({super.key});
@@ -17,6 +18,7 @@ class _EcranReglagesState extends State<EcranReglages> {
   final _r = Reglages.instance;
   final _url = TextEditingController();
   final _token = TextEditingController();
+  final _prenom = TextEditingController();
   Bilan _bilan = const Bilan(0, 0);
   String _testSync = '';
 
@@ -27,6 +29,7 @@ class _EcranReglagesState extends State<EcranReglages> {
     super.initState();
     _url.text = _r.syncUrl;
     _token.text = _r.syncToken;
+    _prenom.text = _r.prenom;
     BaseDonnees.version.addListener(_chargerBilan);
     SyncService.instance.etat.addListener(_maj);
     _chargerBilan();
@@ -38,6 +41,7 @@ class _EcranReglagesState extends State<EcranReglages> {
     SyncService.instance.etat.removeListener(_maj);
     _url.dispose();
     _token.dispose();
+    _prenom.dispose();
     super.dispose();
   }
 
@@ -89,6 +93,21 @@ class _EcranReglagesState extends State<EcranReglages> {
     setState(() {});
   }
 
+  /// Récupère l'URL et le jeton depuis le QR code affiché par un autre téléphone.
+  Future<void> _importerConfig() async {
+    final config = await Navigator.push<ConfigSync>(
+        context, MaterialPageRoute(builder: (_) => const EcranScanConfig()));
+    if (config == null) return;
+    await _r.setSyncUrl(config.url);
+    await _r.setSyncToken(config.token);
+    await _r.setSyncActif(true);
+    _url.text = config.url;
+    _token.text = config.token;
+    if (!mounted) return;
+    setState(() => _testSync = 'Configuration importée');
+    SyncService.instance.synchroniser(complet: true);
+  }
+
   String _dateLisible(String? iso) {
     if (iso == null || iso.length < 16) return 'jamais';
     final d = DateTime.tryParse(iso)?.toLocal();
@@ -117,6 +136,17 @@ class _EcranReglagesState extends State<EcranReglages> {
               LinearProgressIndicator(value: _bilan.pourcentageSauves, minHeight: 10),
             ],
             const Divider(height: 32),
+            TextField(
+              controller: _prenom,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Ton prénom (facultatif)',
+                helperText: 'Affiché à côté des produits que tu ajoutes',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (v) => _r.setPrenom(v),
+            ),
+            const SizedBox(height: 8),
             SwitchListTile(
               title: const Text('Notifications'),
               subtitle: const Text('Rappels de péremption et de courses'),
@@ -178,7 +208,7 @@ class _EcranReglagesState extends State<EcranReglages> {
               onChanged: (v) async {
                 await _r.setSyncActif(v);
                 setState(() {});
-                if (v) sync.synchroniser();
+                if (v) sync.synchroniser(complet: true);
               },
             ),
             TextField(
@@ -187,7 +217,10 @@ class _EcranReglagesState extends State<EcranReglages> {
               autocorrect: false,
               decoration: const InputDecoration(
                   labelText: 'URL de l\'application web', border: OutlineInputBorder()),
-              onChanged: (v) => _r.setSyncUrl(v),
+              onChanged: (v) async {
+                await _r.setSyncUrl(v);
+                if (mounted) setState(() {});
+              },
             ),
             const SizedBox(height: 12),
             TextField(
@@ -196,7 +229,10 @@ class _EcranReglagesState extends State<EcranReglages> {
               autocorrect: false,
               enableSuggestions: false,
               decoration: const InputDecoration(labelText: 'Jeton', border: OutlineInputBorder()),
-              onChanged: (v) => _r.setSyncToken(v),
+              onChanged: (v) async {
+                await _r.setSyncToken(v);
+                if (mounted) setState(() {});
+              },
             ),
             const SizedBox(height: 12),
             Row(
@@ -214,8 +250,34 @@ class _EcranReglagesState extends State<EcranReglages> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton(
-                    onPressed: () => sync.synchroniser(force: true),
+                    onPressed: () => sync.synchroniser(force: true, complet: true),
                     child: const Text('Synchroniser maintenant'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _r.syncUrl.isEmpty || _r.syncToken.isEmpty
+                        ? null
+                        : () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => EcranPartageConfig(
+                                    url: _r.syncUrl, token: _r.syncToken))),
+                    icon: const Icon(Icons.qr_code_2),
+                    label: const Text('Partager (QR)'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _importerConfig,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('Scanner un QR'),
                   ),
                 ),
               ],

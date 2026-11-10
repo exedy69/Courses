@@ -49,6 +49,9 @@ dependencies:
   app_settings: ^9.0.1
   flutter_localizations:
     sdk: flutter
+  flutter_secure_storage: ^11.2.0
+  cached_network_image: ^4.0.6
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:
@@ -60,6 +63,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  sqflite_common_ffi: ^2.4.6
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

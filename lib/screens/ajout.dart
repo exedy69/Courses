@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../data/durees.dart';
 import '../db/base_donnees.dart';
 import '../models/produit.dart';
+import '../services/reglages.dart';
 import '../services/sync_service.dart';
 import '../widgets/miniature.dart';
 import '../widgets/saisie_date.dart';
@@ -86,7 +87,7 @@ class _EcranAjoutState extends State<EcranAjout> {
   }
 
   Future<bool> _enregistrer() async {
-    final nom = _nom.text.trim();
+    final nom = neutraliserFormule(_nom.text);
     if (nom.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Donne un nom au produit.')));
@@ -110,6 +111,7 @@ class _EcranAjoutState extends State<EcranAjout> {
         datePeremption: _date,
         quantite: _quantite,
         photoPath: _photo,
+        auteur: Reglages.instance.prenomOuNull,
       ));
     }
     SyncService.instance.planifier();
