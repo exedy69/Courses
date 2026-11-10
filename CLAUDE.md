@@ -4,7 +4,7 @@ Appli Android personnelle (Flutter), cible unique : Xiaomi 17 Ultra (HyperOS 3 /
 
 ## Architecture
 
-- `lib/main.dart` : démarrage, locale fr_FR, coque à 3 onglets (IndexedStack), cycle de vie.
+- `lib/main.dart` : démarrage, locale fr_FR, coque à 4 onglets (Mon stock, Repas, Courses, Réglages ; IndexedStack), cycle de vie.
 - `lib/theme.dart` : **seule source de vérité** des couleurs d'urgence (`Urgence`), libellés, thèmes clair/sombre, widget `CarteApp`.
 - `lib/models/` : `Produit` (+ `normaliser`, dates ISO), `Recette`, `CatalogueItem`.
 - `lib/db/base_donnees.dart` : SQLite (sqflite), schéma versionné (`versionSchema`, `migrerSchema`), suppression logique, historique, liste de courses, synchro générique décrite par `tablesSync`. `BaseDonnees.version` est incrémenté à chaque écriture, les écrans l'écoutent.
