@@ -39,19 +39,14 @@ class _EcranAccueilState extends State<EcranAccueil> {
   }
 
   Future<void> _charger() async {
-    final liste = await BaseDonnees.instance.lister();
-    final images = <String, String>{};
-    for (final p in liste) {
-      final code = p.codeBarres;
-      if (code != null && (p.photoPath == null)) {
-        final c = await BaseDonnees.instance.getCatalogue(code);
-        if (c?.imageUrl != null) images[p.uuid] = c!.imageUrl!;
-      }
-    }
+    final liste = await BaseDonnees.instance.listerAvecImages();
     if (!mounted) return;
     setState(() {
-      _produits = liste;
-      _images = images;
+      _produits = [for (final l in liste) l.produit];
+      _images = {
+        for (final l in liste)
+          if (l.imageUrl != null) l.produit.uuid: l.imageUrl!,
+      };
       _charge = true;
     });
   }
@@ -67,21 +62,79 @@ class _EcranAccueilState extends State<EcranAccueil> {
     }
   }
 
-  Future<void> _archiver(Produit p, String issue) async {
-    await BaseDonnees.instance.archiver(p, issue);
+  /// Demande combien d'unités sont concernées quand il y en a plusieurs.
+  Future<int?> _demanderNombre(Produit p, String issue) {
+    var n = p.quantite;
+    return showDialog<int>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, maj) => AlertDialog(
+          title: Text(issue == 'consomme' ? 'Combien de consommés ?' : 'Combien de jetés ?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('${p.nom} (×${p.quantite})'),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton.filledTonal(
+                      onPressed: n > 1 ? () => maj(() => n--) : null,
+                      icon: const Icon(Icons.remove)),
+                  SizedBox(
+                    width: 56,
+                    child: Text('$n',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(ctx).textTheme.headlineSmall),
+                  ),
+                  IconButton.filledTonal(
+                      onPressed: n < p.quantite ? () => maj(() => n++) : null,
+                      icon: const Icon(Icons.add)),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, n), child: const Text('Valider')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Appelé par le glissement. Renvoie vrai si la carte doit disparaître.
+  Future<bool> _surGlissement(Produit p, String issue) async {
+    var nombre = p.quantite;
+    if (p.quantite > 1) {
+      final choix = await _demanderNombre(p, issue);
+      if (choix == null) return false;
+      nombre = choix;
+    }
+    final archivage = await BaseDonnees.instance.archiver(p, issue, nombre: nombre);
     SyncService.instance.planifier();
-    if (!mounted) return;
+    if (!mounted) return true;
+    final quoi = nombre > 1 || p.quantite > 1 ? '$nombre × ${p.nom}' : p.nom;
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(SnackBar(
-        content: Text(issue == 'consomme' ? 'Consommé : ${p.nom}' : 'Jeté : ${p.nom}'),
-        duration: const Duration(seconds: 3),
+        content: Text(issue == 'consomme' ? 'Consommé : $quoi' : 'Jeté : $quoi'),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'Annuler',
+          onPressed: () async {
+            await BaseDonnees.instance.annulerArchivage(archivage);
+            SyncService.instance.planifier();
+          },
+        ),
       ));
+    // S'il reste des unités, la carte reste en place (la liste se recharge).
+    return nombre >= p.quantite;
   }
 
   Future<void> _rafraichir() async {
     await _charger();
-    await SyncService.instance.synchroniser();
+    await SyncService.instance.synchroniser(complet: true);
     await ServiceNotifications.instance.reprogrammer().catchError((_) {});
   }
 
@@ -193,8 +246,9 @@ class _EcranAccueilState extends State<EcranAccueil> {
       background: _fondGlisse(Colors.green.shade700, Icons.check, 'Consommé', Alignment.centerLeft),
       secondaryBackground:
           _fondGlisse(Colors.red.shade700, Icons.delete_outline, 'Jeté', Alignment.centerRight),
-      onDismissed: (dir) =>
-          _archiver(p, dir == DismissDirection.startToEnd ? 'consomme' : 'jete'),
+      confirmDismiss: (dir) =>
+          _surGlissement(p, dir == DismissDirection.startToEnd ? 'consomme' : 'jete'),
+      onDismissed: (_) => setState(() => _produits.removeWhere((x) => x.uuid == p.uuid)),
       child: CarteApp(
         onTap: () => Navigator.push(
             context, MaterialPageRoute(builder: (_) => EcranAjout(produit: p))),
@@ -224,6 +278,9 @@ class _EcranAccueilState extends State<EcranAccueil> {
                       const SizedBox(height: 2),
                       Text('${libelleUrgence(jours)} · ${formatDateCourte(p.datePeremption)}',
                           style: TextStyle(color: texte, fontWeight: FontWeight.w600)),
+                      if (p.auteur != null && p.auteur!.isNotEmpty)
+                        Text('Ajouté par ${p.auteur}',
+                            style: Theme.of(context).textTheme.bodySmall),
                     ],
                   ),
                 ),

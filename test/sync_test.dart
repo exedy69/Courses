@@ -1,92 +1,96 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frigo_malin/db/base_donnees.dart';
-import 'package:frigo_malin/services/reglages.dart';
+import 'package:frigo_malin/models/produit.dart';
 import 'package:frigo_malin/services/sync_backend.dart';
 import 'package:frigo_malin/services/sync_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-/// Magasin en mémoire qui applique la même règle que SQLite (distantGagne).
-class StoreMemoire implements SyncStore {
-  final produits = <String, Map<String, Object?>>{};
-  final catalogue = <String, Map<String, Object?>>{};
-  final historique = <String, Map<String, Object?>>{};
-
-  List<Map<String, Object?>> _depuis(Map<String, Map<String, Object?>> m, String? d) => m.values
-      .where((l) => d == null || (l['updated_at'] as String).compareTo(d) > 0)
-      .map((l) => Map<String, Object?>.from(l))
-      .toList();
-
+class EtatMemoire implements EtatSync {
   @override
-  Future<List<Map<String, Object?>>> produitsModifiesDepuis(String? d) async => _depuis(produits, d);
+  bool actif = true;
   @override
-  Future<List<Map<String, Object?>>> catalogueModifieDepuis(String? d) async => _depuis(catalogue, d);
+  String url = 'https://script.google.com/macros/s/xxx/exec';
   @override
-  Future<List<Map<String, Object?>>> historiqueModifieDepuis(String? d) async => _depuis(historique, d);
-
-  void _appliquer(Map<String, Map<String, Object?>> cible, List<Map<String, Object?>> l, String cle) {
-    final f = fusionner(cible, l, cle);
-    cible
-      ..clear()
-      ..addAll(f);
-  }
-
+  String token = 'secret';
   @override
-  Future<void> appliquerProduitsDistants(List<Map<String, Object?>> l) async => _appliquer(produits, l, 'uuid');
+  int curseur = 0;
   @override
-  Future<void> appliquerCatalogueDistant(List<Map<String, Object?>> l) async => _appliquer(catalogue, l, 'code_barres');
+  String? urlConnue;
+  String? dernierOk;
   @override
-  Future<void> appliquerHistoriqueDistant(List<Map<String, Object?>> l) async => _appliquer(historique, l, 'uuid');
+  Future<void> setCurseur(int v) async => curseur = v;
+  @override
+  Future<void> setUrlConnue(String v) async => urlConnue = v;
+  @override
+  Future<void> setDernierOk(String iso) async => dernierOk = iso;
 }
 
-/// Faux serveur Apps Script : même logique d'upsert « dernière écriture gagne ».
+/// Faux serveur : même logique que apps_script/Code.gs (numéro d'écriture croissant).
 class ServeurFactice implements SyncBackend {
-  final produits = <String, Map<String, Object?>>{};
-  final catalogue = <String, Map<String, Object?>>{};
-  final historique = <String, Map<String, Object?>>{};
-  SyncRequete? derniere;
-  String heure = '2026-11-07T12:00:00.000Z';
+  final tables = <String, Map<String, Map<String, Object?>>>{};
+  int seq = 0;
   bool panne = false;
-
-  List<Map<String, Object?>> _depuis(Map<String, Map<String, Object?>> m, String since) => m.values
-      .where((l) => since.isEmpty || (l['updated_at'] as String).compareTo(since) > 0)
-      .toList();
+  bool ancienScript = false;
+  SyncRequete? derniere;
+  int appels = 0;
 
   @override
   Future<void> tester() async {}
 
   @override
   Future<SyncReponse> echanger(SyncRequete r) async {
+    appels++;
     if (panne) throw const SyncErreur('Connexion impossible');
-    derniere = r;
-    for (final (m, l, k) in [
-      (produits, r.produits, 'uuid'),
-      (catalogue, r.catalogue, 'code_barres'),
-      (historique, r.historique, 'uuid'),
-    ]) {
-      final f = fusionner(m, l, k);
-      m
-        ..clear()
-        ..addAll(f);
+    if (ancienScript) {
+      throw const SyncErreur('Script Google trop ancien : recolle Code.gs et refais un déploiement');
     }
-    return SyncReponse(
-      produits: _depuis(produits, r.since),
-      catalogue: _depuis(catalogue, r.since),
-      historique: _depuis(historique, r.since),
-      serverTime: heure,
-    );
+    derniere = r;
+    final sortie = <String, List<Map<String, Object?>>>{};
+    for (final e in r.tables.entries) {
+      final t = tables.putIfAbsent(e.key, () => {});
+      final cle = tableSync(e.key).cle;
+      for (final l in e.value) {
+        final k = l[cle] as String;
+        final existant = t[k];
+        if (distantGagne(existant?['updated_at'] as String?, l['updated_at'] as String)) {
+          t[k] = {...l, 'seq': ++seq};
+        }
+      }
+      sortie[e.key] = [
+        for (final l in t.values)
+          if ((l['seq'] as int) > r.curseur) Map<String, Object?>.from(l)..remove('seq'),
+      ];
+    }
+    return SyncReponse(tables: sortie, curseur: seq);
   }
 }
 
-Map<String, Object?> prod(String uuid, String nom, String maj, {String? supprime}) => {
-      'uuid': uuid,
-      'nom': nom,
-      'date_peremption': '2026-11-20',
-      'quantite': 1,
-      'updated_at': maj,
-      'deleted_at': supprime,
-    };
+class Telephone {
+  final BaseDonnees base;
+  final EtatMemoire etat = EtatMemoire();
+  late final SyncService sync;
+  Telephone(this.base, ServeurFactice serveur) {
+    sync = SyncService.pour(
+        store: SyncStoreSqlite(base), fabriqueBackend: (_, _) => serveur, etat: etat);
+  }
+  Future<List<String>> noms() async => [for (final p in await base.lister()) p.nom];
+}
+
+Future<BaseDonnees> nouvelleBase() async {
+  final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath,
+      options: OpenDatabaseOptions(
+          version: BaseDonnees.versionSchema,
+          onCreate: BaseDonnees.creerSchema,
+          singleInstance: false));
+  return BaseDonnees.pourTest(db);
+}
+
+Produit prod(String nom, {int jours = 5}) =>
+    Produit(nom: nom, datePeremption: aujourdhui().add(Duration(days: jours)));
 
 void main() {
+  sqfliteFfiInit();
+
   test('distantGagne : la plus récente gagne, égalité = local conservé', () {
     expect(distantGagne(null, '2026-01-01T00:00:00.000Z'), isTrue);
     expect(distantGagne('2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.001Z'), isTrue);
@@ -94,106 +98,152 @@ void main() {
     expect(distantGagne('2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'), isFalse);
   });
 
-  test('fusionner : dernière écriture gagne', () {
-    final locales = {'a': prod('a', 'Local', '2026-11-07T10:00:00.000Z')};
-    final res = fusionner(locales, [
-      prod('a', 'Distant plus ancien', '2026-11-07T09:00:00.000Z'),
-      prod('b', 'Nouveau', '2026-11-07T09:00:00.000Z'),
-    ], 'uuid');
-    expect(res['a']!['nom'], 'Local');
-    expect(res['b']!['nom'], 'Nouveau');
-    final res2 = fusionner(locales, [prod('a', 'Distant récent', '2026-11-07T11:00:00.000Z')], 'uuid');
-    expect(res2['a']!['nom'], 'Distant récent');
+  test('fusionner : dernière écriture gagne et suppressions propagées', () {
+    Map<String, Object?> l(String nom, String maj, {String? supprime}) =>
+        {'uuid': 'a', 'nom': nom, 'updated_at': maj, 'deleted_at': supprime};
+    final locales = {'a': l('Local', '2026-11-07T10:00:00.000Z')};
+    expect(fusionner(locales, [l('Ancien', '2026-11-07T09:00:00.000Z')], 'uuid')['a']!['nom'], 'Local');
+    expect(fusionner(locales, [l('Récent', '2026-11-07T11:00:00.000Z')], 'uuid')['a']!['nom'], 'Récent');
+    final supprime = fusionner(locales,
+        [l('Local', '2026-11-07T11:00:00.000Z', supprime: '2026-11-07T11:00:00.000Z')], 'uuid');
+    expect(supprime['a']!['deleted_at'], isNotNull);
   });
 
-  test('fusionner : une suppression logique plus récente se propage', () {
-    final locales = {'a': prod('a', 'Lait', '2026-11-07T10:00:00.000Z')};
-    final res = fusionner(locales,
-        [prod('a', 'Lait', '2026-11-07T11:00:00.000Z', supprime: '2026-11-07T11:00:00.000Z')], 'uuid');
-    expect(res['a']!['deleted_at'], '2026-11-07T11:00:00.000Z');
-    // et une modification locale plus récente ressuscite le produit
-    final res2 = fusionner(res, [prod('a', 'Lait', '2026-11-07T12:00:00.000Z')], 'uuid');
-    expect(res2['a']!['deleted_at'], isNull);
-  });
-
-  group('SyncService', () {
-    late StoreMemoire store;
+  group('deux téléphones', () {
     late ServeurFactice serveur;
-    late SyncService service;
-    late Reglages reglages;
+    late Telephone a;
+    late Telephone b;
 
     setUp(() async {
-      SharedPreferences.setMockInitialValues({
-        'sync_actif': true,
-        'sync_url': 'https://script.google.com/macros/s/xxx/exec',
-        'sync_token': 'secret',
-      });
-      reglages = await Reglages.charger();
-      store = StoreMemoire();
       serveur = ServeurFactice();
-      service = SyncService.pour(
-          store: store, fabriqueBackend: (_, _) => serveur, reglages: reglages);
+      a = Telephone(await nouvelleBase(), serveur);
+      b = Telephone(await nouvelleBase(), serveur);
     });
 
-    test('push des lignes locales, pull des lignes distantes', () async {
-      store.produits['a'] = prod('a', 'Local', '2026-11-07T10:00:00.000Z');
-      serveur.produits['z'] = prod('z', 'Du Sheet', '2026-11-07T08:00:00.000Z');
-      await service.synchroniser();
-      expect(serveur.produits.keys, containsAll(['a', 'z']));
-      expect(store.produits.keys, containsAll(['a', 'z']));
-      expect(service.etat.value, 'Synchronisé');
-      expect(reglages.syncDernierOk, serveur.heure);
-      expect(reglages.syncDernierPush, isNotNull);
+    test('un ajout sur A arrive sur B', () async {
+      await a.base.ajouter(prod('Lait'));
+      await a.sync.synchroniser();
+      await b.sync.synchroniser();
+      expect(await b.noms(), ['Lait']);
+      expect(a.sync.etat.value, 'Synchronisé');
+      expect(a.etat.dernierOk, isNotNull);
     });
 
-    test('seconde synchro : push seulement des lignes modifiées depuis le dernier push', () async {
-      store.produits['a'] = prod('a', 'Ancien', '2000-01-01T00:00:00.000Z');
-      await service.synchroniser();
-      expect(serveur.derniere!.produits.length, 1);
-      await service.synchroniser();
-      expect(serveur.derniere!.produits, isEmpty);
-      expect(serveur.derniere!.since, serveur.heure);
-      store.produits['b'] = prod('b', 'Récent', '2999-01-01T00:00:00.000Z');
-      await service.synchroniser();
-      expect(serveur.derniere!.produits.map((p) => p['uuid']), ['b']);
+    test('une modification faite hors-ligne AVANT la synchro de l\'autre n\'est pas perdue', () async {
+      // B modifie hors-ligne (son heure de modification est ancienne)…
+      await b.base.ajouter(prod('Yaourt de B'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      // …puis A synchronise et avance son curseur…
+      await a.base.ajouter(prod('Lait de A'));
+      await a.sync.synchroniser();
+      // …et B ne synchronise qu'ensuite.
+      await b.sync.synchroniser();
+      await a.sync.synchroniser();
+      expect(await a.noms(), containsAll(['Lait de A', 'Yaourt de B']));
+      expect(await b.noms(), containsAll(['Lait de A', 'Yaourt de B']));
     });
 
-    test('suppression distante propagée vers le téléphone', () async {
-      store.produits['a'] = prod('a', 'Lait', '2026-11-07T10:00:00.000Z');
-      await service.synchroniser();
-      serveur.produits['a'] = prod('a', 'Lait', '2999-01-01T00:00:00.000Z',
-          supprime: '2999-01-01T00:00:00.000Z');
-      await service.synchroniser();
-      expect(store.produits['a']!['deleted_at'], '2999-01-01T00:00:00.000Z');
+    test('seules les lignes modifiées sont renvoyées', () async {
+      await a.base.ajouter(prod('Lait'));
+      await a.sync.synchroniser();
+      expect(serveur.derniere!.tables['produits']!.length, 1);
+      await a.sync.synchroniser();
+      expect(serveur.derniere!.tables['produits'], isEmpty);
+      await a.base.ajouter(prod('Beurre'));
+      await a.sync.synchroniser();
+      expect(serveur.derniere!.tables['produits']!.map((l) => l['nom']), ['Beurre']);
     });
 
-    test('catalogue et historique sont synchronisés', () async {
-      store.catalogue['3017620422003'] = {
-        'code_barres': '3017620422003', 'nom': 'Nutella', 'updated_at': '2026-11-07T10:00:00.000Z'
-      };
-      serveur.historique['h'] = {
-        'uuid': 'h', 'nom': 'Pain', 'issue': 'jete', 'updated_at': '2026-11-07T09:00:00.000Z'
-      };
-      await service.synchroniser();
-      expect(serveur.catalogue.keys, ['3017620422003']);
-      expect(store.historique.keys, ['h']);
+    test('les lignes reçues ne sont pas renvoyées (pas de ping-pong)', () async {
+      await a.base.ajouter(prod('Lait'));
+      await a.sync.synchroniser();
+      await b.sync.synchroniser();
+      final seqAvant = serveur.seq;
+      await b.sync.synchroniser();
+      await a.sync.synchroniser();
+      expect(serveur.seq, seqAvant);
     });
 
-    test('une panne réseau ne lève rien et laisse l\'état d\'échec', () async {
+    test('une suppression sur A se propage à B', () async {
+      final p = prod('Lait');
+      await a.base.ajouter(p);
+      await a.sync.synchroniser();
+      await b.sync.synchroniser();
+      expect(await b.noms(), ['Lait']);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await a.base.archiver(p, 'consomme');
+      await a.sync.synchroniser();
+      await b.sync.synchroniser();
+      expect(await b.noms(), isEmpty);
+      expect((await b.base.bilan()).consommes, 1);
+    });
+
+    test('modification concurrente : la dernière écriture gagne des deux côtés', () async {
+      final p = prod('Lait');
+      await a.base.ajouter(p);
+      await a.sync.synchroniser();
+      await b.sync.synchroniser();
+      final chezB = (await b.base.lister()).single;
+      p.quantite = 2;
+      await a.base.modifier(p);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      chezB.quantite = 5;
+      await b.base.modifier(chezB);
+      await a.sync.synchroniser();
+      await b.sync.synchroniser();
+      await a.sync.synchroniser();
+      expect((await a.base.lister()).single.quantite, 5);
+      expect((await b.base.lister()).single.quantite, 5);
+    });
+
+    test('la liste de courses et le catalogue sont partagés', () async {
+      await a.base.ajouterCourse('Farine', auteur: 'Kendrick');
+      await a.sync.synchroniser();
+      await b.sync.synchroniser();
+      final courses = await b.base.listerCourses();
+      expect(courses.single.nom, 'Farine');
+      expect(courses.single.auteur, 'Kendrick');
+      await b.base.cocherCourse(courses.single, true);
+      await b.sync.synchroniser();
+      await a.sync.synchroniser();
+      expect((await a.base.listerCourses()).single.fait, isTrue);
+    });
+
+    test('changement de Sheet : tout est renvoyé et le curseur repart de zéro', () async {
+      await a.base.ajouter(prod('Lait'));
+      await a.sync.synchroniser();
+      expect(a.etat.curseur, greaterThan(0));
+      a.etat.url = 'https://script.google.com/macros/s/autre/exec';
+      await a.sync.synchroniser();
+      expect(serveur.derniere!.curseur, 0);
+      expect(serveur.derniere!.tables['produits']!.length, 1);
+    });
+
+    test('une panne réseau ne lève rien, rien n\'est perdu', () async {
       serveur.panne = true;
-      store.produits['a'] = prod('a', 'Local', '2026-11-07T10:00:00.000Z');
-      await service.synchroniser();
-      expect(service.etat.value, startsWith('Échec'));
-      expect(reglages.syncDernierOk, isNull);
+      await a.base.ajouter(prod('Lait'));
+      await a.sync.synchroniser();
+      expect(a.sync.etat.value, startsWith('Échec'));
+      expect(a.etat.dernierOk, isNull);
       serveur.panne = false;
-      await service.synchroniser();
-      expect(serveur.produits.keys, contains('a'));
+      await a.sync.synchroniser();
+      await b.sync.synchroniser();
+      expect(await b.noms(), ['Lait']);
     });
 
-    test('inactive si désactivée', () async {
-      await reglages.setSyncActif(false);
-      await service.synchroniser();
-      expect(serveur.derniere, isNull);
+    test('script Google trop ancien : message clair, curseur inchangé', () async {
+      serveur.ancienScript = true;
+      await a.sync.synchroniser();
+      expect(a.sync.etat.value, contains('Script Google trop ancien'));
+      expect(a.etat.curseur, 0);
+    });
+
+    test('inactive si désactivée, sauf demande explicite', () async {
+      a.etat.actif = false;
+      await a.sync.synchroniser();
+      expect(serveur.appels, 0);
+      await a.sync.synchroniser(force: true, complet: true);
+      expect(serveur.derniere!.complet, isTrue);
     });
   });
 }

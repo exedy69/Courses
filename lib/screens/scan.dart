@@ -8,6 +8,7 @@ import '../db/base_donnees.dart';
 import '../models/catalogue_item.dart';
 import '../models/produit.dart';
 import '../services/catalogue_service.dart';
+import '../services/reglages.dart';
 import '../services/sync_service.dart';
 import '../widgets/miniature.dart';
 import '../widgets/saisie_date.dart';
@@ -152,6 +153,7 @@ class _EcranScanState extends State<EcranScan> {
       datePeremption: res.date,
       quantite: res.quantite,
       categorie: libelleCategorie(item.categorie),
+      auteur: Reglages.instance.prenomOuNull,
     );
     await BaseDonnees.instance.ajouter(produit);
     final duree = res.date.difference(aujourdhui()).inDays;
@@ -441,7 +443,7 @@ class _FeuilleProduitState extends State<FeuilleProduit> {
                     height: 52,
                     child: FilledButton(
                       onPressed: () {
-                        final nom = _nom.text.trim();
+                        final nom = neutraliserFormule(_nom.text);
                         if (nom.isEmpty) return;
                         Navigator.pop(context, ResultatFeuille(nom, _quantite, _date));
                       },

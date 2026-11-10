@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -5,6 +7,7 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'db/base_donnees.dart';
 import 'screens/accueil.dart';
+import 'screens/courses.dart';
 import 'screens/repas.dart';
 import 'screens/reglages_ecran.dart';
 import 'services/reglages.dart';
@@ -53,6 +56,10 @@ class CoquillePrincipale extends StatefulWidget {
 class _CoquillePrincipaleState extends State<CoquillePrincipale>
     with WidgetsBindingObserver {
   int _onglet = 0;
+  Timer? _minuteur;
+
+  /// Délai entre deux synchros quand l'appli est au premier plan.
+  static const _intervalle = Duration(seconds: 20);
 
   @override
   void initState() {
@@ -64,6 +71,7 @@ class _CoquillePrincipaleState extends State<CoquillePrincipale>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _minuteur?.cancel();
     super.dispose();
   }
 
@@ -77,7 +85,17 @@ class _CoquillePrincipaleState extends State<CoquillePrincipale>
     } catch (_) {
       // Les notifications ne doivent jamais empêcher l'appli de démarrer.
     }
-    SyncService.instance.synchroniser();
+    try {
+      await BaseDonnees.instance.purger();
+    } catch (_) {}
+    SyncService.instance.synchroniser(complet: true);
+    _lancerMinuteur();
+  }
+
+  /// Synchro légère toutes les 20 s tant que l'appli est visible.
+  void _lancerMinuteur() {
+    _minuteur?.cancel();
+    _minuteur = Timer.periodic(_intervalle, (_) => SyncService.instance.synchroniser());
   }
 
   @override
@@ -85,7 +103,11 @@ class _CoquillePrincipaleState extends State<CoquillePrincipale>
     if (etat == AppLifecycleState.resumed) {
       // Les couleurs dépendent de la date : on recharge stock et repas.
       BaseDonnees.version.value++;
-      SyncService.instance.synchroniser();
+      SyncService.instance.synchroniser(complet: true);
+      _lancerMinuteur();
+    } else if (etat == AppLifecycleState.paused) {
+      _minuteur?.cancel();
+      _minuteur = null;
     }
   }
 
@@ -94,7 +116,7 @@ class _CoquillePrincipaleState extends State<CoquillePrincipale>
     return Scaffold(
       body: IndexedStack(
         index: _onglet,
-        children: const [EcranAccueil(), EcranRepas(), EcranReglages()],
+        children: const [EcranAccueil(), EcranRepas(), EcranCourses(), EcranReglages()],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _onglet,
@@ -102,6 +124,7 @@ class _CoquillePrincipaleState extends State<CoquillePrincipale>
         destinations: const [
           NavigationDestination(icon: Icon(Icons.kitchen_outlined), selectedIcon: Icon(Icons.kitchen), label: 'Mon stock'),
           NavigationDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: 'Repas'),
+          NavigationDestination(icon: Icon(Icons.shopping_cart_outlined), selectedIcon: Icon(Icons.shopping_cart), label: 'Courses'),
           NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Réglages'),
         ],
       ),

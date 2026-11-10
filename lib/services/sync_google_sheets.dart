@@ -85,21 +85,24 @@ class SyncGoogleSheets implements SyncBackend {
         ..body = jsonEncode({
           'token': token,
           'action': 'sync',
-          'since': r.since,
-          'produits': r.produits,
-          'catalogue': r.catalogue,
-          'historique': r.historique,
+          'v': 2,
+          'cursor': r.curseur,
+          'complet': r.complet,
+          ...r.tables,
         });
       final rep = await _suivre(await client.send(req).timeout(delai));
       final j = _decoder(rep);
       if (j['ok'] != true) {
         throw const SyncErreur('Refusé par le serveur (jeton incorrect ?)');
       }
+      final curseur = j['cursor'];
+      if (curseur is! num) {
+        throw const SyncErreur(
+            'Script Google trop ancien : recolle Code.gs et refais un déploiement');
+      }
       return SyncReponse(
-        produits: _liste(j['produits']),
-        catalogue: _liste(j['catalogue']),
-        historique: _liste(j['historique']),
-        serverTime: (j['serverTime'] ?? '').toString(),
+        tables: {for (final nom in r.tables.keys) nom: _liste(j[nom])},
+        curseur: curseur.toInt(),
       );
     } on SyncErreur {
       rethrow;

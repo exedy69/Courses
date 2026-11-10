@@ -1,14 +1,34 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Reglages {
-  Reglages._(this._p);
+  Reglages._(this._p, this._token);
   final SharedPreferences _p;
+  String _token;
+
+  static const _coffre = FlutterSecureStorage();
 
   static Reglages? _instance;
   static Reglages get instance => _instance!;
 
   static Future<Reglages> charger() async {
-    _instance = Reglages._(await SharedPreferences.getInstance());
+    final p = await SharedPreferences.getInstance();
+    var token = '';
+    try {
+      token = await _coffre.read(key: cSyncToken) ?? '';
+      // Migration : l'ancien jeton en clair passe dans le stockage chiffré.
+      final ancien = p.getString(cSyncToken);
+      if (ancien != null) {
+        if (token.isEmpty && ancien.isNotEmpty) {
+          token = ancien;
+          await _coffre.write(key: cSyncToken, value: ancien);
+        }
+        await p.remove(cSyncToken);
+      }
+    } catch (_) {
+      // Stockage chiffré indisponible : la synchro restera simplement inactive.
+    }
+    _instance = Reglages._(p, token);
     return _instance!;
   }
 
@@ -23,7 +43,9 @@ class Reglages {
   static const cSyncUrl = 'sync_url';
   static const cSyncToken = 'sync_token';
   static const cSyncDernierOk = 'sync_dernier_ok';
-  static const cSyncDernierPush = 'sync_dernier_push';
+  static const cSyncCurseur = 'sync_curseur';
+  static const cPrenom = 'prenom';
+  static const cSyncUrlConnue = 'sync_url_connue';
 
   int get heure => _p.getInt(cHeure) ?? 18;
   int get minute => _p.getInt(cMinute) ?? 0;
@@ -45,18 +67,34 @@ class Reglages {
   int get seuilSilence => _p.getInt(cSeuilSilence) ?? 10;
   Future<void> setSeuilSilence(int j) => _p.setInt(cSeuilSilence, j);
 
+  /// Prénom affiché à côté des produits ajoutés (« ajouté par »).
+  String get prenom => _p.getString(cPrenom) ?? '';
+  String? get prenomOuNull => prenom.isEmpty ? null : prenom;
+  Future<void> setPrenom(String v) => _p.setString(cPrenom, v.trim());
+
   bool get syncActif => _p.getBool(cSyncActif) ?? false;
   Future<void> setSyncActif(bool v) => _p.setBool(cSyncActif, v);
 
   String get syncUrl => _p.getString(cSyncUrl) ?? '';
   Future<void> setSyncUrl(String v) => _p.setString(cSyncUrl, v.trim());
 
-  String get syncToken => _p.getString(cSyncToken) ?? '';
-  Future<void> setSyncToken(String v) => _p.setString(cSyncToken, v.trim());
+  /// Jeton conservé dans le stockage chiffré d'Android, jamais en clair.
+  String get syncToken => _token;
+  Future<void> setSyncToken(String v) async {
+    _token = v.trim();
+    try {
+      await _coffre.write(key: cSyncToken, value: _token);
+    } catch (_) {}
+  }
 
   String? get syncDernierOk => _p.getString(cSyncDernierOk);
   Future<void> setSyncDernierOk(String v) => _p.setString(cSyncDernierOk, v);
 
-  String? get syncDernierPush => _p.getString(cSyncDernierPush);
-  Future<void> setSyncDernierPush(String v) => _p.setString(cSyncDernierPush, v);
+  /// URL avec laquelle le curseur actuel a été obtenu (détecte un changement de Sheet).
+  String? get syncUrlConnue => _p.getString(cSyncUrlConnue);
+  Future<void> setSyncUrlConnue(String v) => _p.setString(cSyncUrlConnue, v);
+
+  /// Dernier numéro d'écriture serveur reçu.
+  int get syncCurseur => _p.getInt(cSyncCurseur) ?? 0;
+  Future<void> setSyncCurseur(int v) => _p.setInt(cSyncCurseur, v);
 }
