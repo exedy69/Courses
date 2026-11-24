@@ -1,0 +1,10 @@
+# Analyse statique : `flutter analyze` doit rester sans aucun message (la CI échoue sinon).
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+
+formatter:
+  page_width: 100

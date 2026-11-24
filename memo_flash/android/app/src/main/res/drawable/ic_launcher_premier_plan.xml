@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Carte du dessous, inclinée -->
+    <group android:rotation="-12" android:pivotX="54" android:pivotY="54">
+        <path
+            android:fillColor="#B39DDB"
+            android:pathData="M37,32 h30 a4,4 0 0 1 4,4 v38 a4,4 0 0 1 -4,4 h-30 a4,4 0 0 1 -4,-4 v-38 a4,4 0 0 1 4,-4 z"/>
+    </group>
+    <!-- Carte du dessus -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M41,30 h30 a4,4 0 0 1 4,4 v40 a4,4 0 0 1 -4,4 h-30 a4,4 0 0 1 -4,-4 v-40 a4,4 0 0 1 4,-4 z"/>
+    <!-- Éclair -->
+    <path
+        android:fillColor="#5E35B1"
+        android:pathData="M59,37 L47,56 h8 l-3,15 l12,-20 h-8 z"/>
+</vector>
