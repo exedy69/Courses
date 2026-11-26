@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from atelier.interface import STYLE, FenetrePrincipale  # noqa: E402
 from atelier.progression import Progression  # noqa: E402
-from atelier.quiz import CHOIX  # noqa: E402
+from atelier.quiz import CHOIX, ORDRE  # noqa: E402
 from atelier.schemas import SCHEMAS  # noqa: E402
 from atelier.symboles import SYMBOLES  # noqa: E402
 from atelier.vue_schema import VueSchema  # noqa: E402
@@ -77,6 +77,11 @@ class TestFenetre(unittest.TestCase):
             q = quiz.session.question
             if q.type == CHOIX:
                 quiz._choisir(q.bonne if juste else (q.bonne + 1) % 4)
+            elif q.type == ORDRE:
+                textes = [c.texte for c in q.choix]
+                ordre = [textes.index(e) for e in q.ordre]
+                for i in (ordre if juste else ordre[::-1]):
+                    quiz._choisir(i)
             else:
                 genre, ids = q.cible
                 quiz._clic_schema(genre, sorted(ids)[0] if juste else "AUCUN")
@@ -87,8 +92,8 @@ class TestFenetre(unittest.TestCase):
             n += 1
         return n
 
-    def test_session_parfaite_niveau_1_et_2(self):
-        for niveau in (1, 2):
+    def test_session_parfaite_niveaux_jouables(self):
+        for niveau in (1, 2, 4):
             self.fenetre.lancer_niveau(niveau)
             n = self._jouer(juste=True)
             self.assertEqual(n, 12)
@@ -110,6 +115,31 @@ class TestFenetre(unittest.TestCase):
         # Rattrapées juste : boîte 2, plus rien à revoir aujourd'hui.
         self.assertIn("rien à revoir",
                       self.fenetre.accueil.bouton_revision.text())
+
+    def test_exercice_ordre(self):
+        quiz = self.fenetre.quiz
+        for _ in range(60):
+            self.fenetre.lancer_niveau(4)
+            q = quiz.session.question
+            if q.type == ORDRE:
+                break
+        else:
+            self.skipTest("aucun exercice d'ordre tiré")
+        self.assertIs(quiz.zone.currentWidget(), quiz.cadre_ordre)
+        n = len(q.choix)
+        self.assertEqual(sum(b.isVisibleTo(quiz) for b in quiz.etapes), n)
+        quiz._choisir(0)
+        quiz._choisir(0)                     # double clic ignoré
+        self.assertEqual(quiz.sequence, [0])
+        quiz._recommencer_ordre()
+        self.assertEqual(quiz.sequence, [])
+        textes = [c.texte for c in q.choix]
+        mauvais = [textes.index(e) for e in q.ordre][::-1]
+        for i in mauvais:
+            quiz._choisir(i)
+        self.assertTrue(quiz.repondu)
+        self.assertIn("bon ordre", quiz.retour.text())
+        self.assertEqual(quiz.etapes[mauvais[0]].property("etat"), "faux")
 
     def test_chrono_ecoule(self):
         self.fenetre.lancer_niveau(1)

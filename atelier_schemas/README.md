@@ -16,19 +16,22 @@ carte mère Mac, en préparation au dépannage de MacBook.
 | 1. Symboles et lecture de base | 17 symboles (résistance, condensateurs, diodes, MOSFET N/P, bobine, fusible, quartz, connecteur, CI…), lettres de référence (R, C, L, D, Q, U, F, J, Y, TP), repérage sur schéma | ✅ 50 cartes |
 | 2. Conventions des schémas Mac | Préfixe PP, lecture des tensions (PP3V3 → 3,3 V), suffixes G3H/S5/S3/S0, `_L` et `#`, `_EN`, `_PGOOD`, `PM_`, renvois de pages, NOSTUFF, XW, valeurs de composants, clics sur les nets d'un schéma | ✅ 42 cartes |
 | 3. Suivre un chemin | — | bientôt |
-| 4. Chaîne d'alimentation | — | bientôt |
+| 4. Chaîne d'alimentation | Nouveau schéma « entrée de charge » (connecteur, fusible, MOSFET d'isolation, chargeur, batterie, PPBUS_G3H, LDO PP3V42_G3H du SMC), rôle du chargeur, ACOK, RSMRST, SLP_S4/S3, ALL_SYS_PWRGD, PLTRST#, exercices « remets dans l'ordre » de la séquence d'allumage | ✅ 28 cartes |
 | 5. Diagnostic (panne simulée, multimètre) | — | bientôt |
 
 Fonctionnement :
 
 - **Sessions de 12 questions**, chrono de 20 s par question (la barre passe au
   rouge sous 5 s). Touches `1` à `4` pour répondre, `Entrée` pour continuer.
-- Trois sortes de questions : symbole affiché → nom ; nom → choisir le symbole ;
-  **schéma interactif** où l'on clique un composant ou un net (survol en bleu,
-  correction en vert/rouge).
+- Quatre sortes de questions : symbole affiché → nom ; nom → choisir le
+  symbole ; **schéma interactif** où l'on clique un composant ou un net (survol
+  en bleu, correction en vert/rouge) ; **remets dans l'ordre** (séquence
+  d'allumage, chemin du courant), avec 60 s au lieu de 20.
+- Sur les schémas, une croix grise marque une broche non connectée (NC).
 - Chaque réponse est corrigée avec une explication.
 - **Répétition espacée** (boîtes de Leitner) : juste et rapide → la carte monte
-  d'une boîte (revue après 1, 3, 7 puis 21 jours) ; juste mais lent (> 10 s) →
+  d'une boîte (revue après 1, 3, 7 puis 21 jours) ; juste mais lent (plus de la
+  moitié du temps accordé) →
   elle reste dans sa boîte ; faux → retour en boîte 1, à revoir le jour même.
   Le bouton « Révision du jour » ne propose que les cartes dues.
 - Progression enregistrée en SQLite dans le dossier de données de
@@ -68,7 +71,8 @@ atelier/
   symboles.py    symboles SVG + position de leurs bornes
   schemas.py     schémas pédagogiques (composants, nets, géométrie)
   cours.py       cours « Analyser avant de réparer » + son quiz
-  contenu.py     questions des niveaux 1 et 2
+  contenu.py     questions des niveaux 1 et 2, aiguillage par niveau
+  niveau4.py     questions du niveau 4 (chaîne d'alimentation)
   quiz.py        session chronométrée, correction (sans Qt)
   progression.py SQLite, boîtes de Leitner
   vue_schema.py  vue Qt cliquable d'un schéma

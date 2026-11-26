@@ -125,6 +125,16 @@ class VueSchema(QGraphicsView):
             texte.setFont(police)
             texte.setPos(comp.x + comp.etiquette[0], comp.y + comp.etiquette[1])
             self._ajouter(texte, "composant", comp.ref, z=3)
+        for comp in schema.composants:
+            for borne in comp.nc:      # croix « non connecté »
+                x, y = sch.position_borne(schema, f"{comp.ref}.{borne}")
+                croix = QPainterPath()
+                croix.moveTo(x - 5, y - 5)
+                croix.lineTo(x + 5, y + 5)
+                croix.moveTo(x - 5, y + 5)
+                croix.lineTo(x + 5, y - 5)
+                item = scene.addPath(croix, QPen(QColor(GRIS), 1.6))
+                item.setZValue(3)
 
         police_net = QFont("monospace", 9)
         police_net.setStyleHint(QFont.Monospace)

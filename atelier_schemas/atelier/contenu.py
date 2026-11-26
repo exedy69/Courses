@@ -15,6 +15,7 @@ import random
 import re
 
 from .cours import NIVEAU_COURS, questions_cours
+from .niveau4 import questions_niveau_4
 from .quiz import CLIC, Choix, Question, melanger_choix
 from .symboles import SYMBOLES
 
@@ -27,11 +28,12 @@ NIVEAUX = {
         "bas et les références de composants."),
     3: ("Suivre un chemin", "Bientôt : d'un connecteur à l'autre, page après "
         "page."),
-    4: ("Chaîne d'alimentation", "Bientôt : de PPDCIN aux rails du "
-        "processeur, ordre d'allumage."),
+    4: ("Chaîne d'alimentation",
+        "De l'entrée de charge à PPBUS_G3H, PP3V42_G3H pour le SMC, puis "
+        "l'ordre d'allumage des rails jusqu'au processeur."),
     5: ("Diagnostic", "Bientôt : panne simulée et multimètre virtuel."),
 }
-NIVEAUX_JOUABLES = (1, 2)
+NIVEAUX_JOUABLES = (1, 2, 4)
 
 # Symboles qu'on confond facilement : ils servent de pièges en priorité.
 _FAMILLES = [
@@ -392,6 +394,8 @@ def questions(niveau: int, rng: random.Random) -> list:
         return questions_niveau_1(rng)
     if niveau == 2:
         return questions_niveau_2(rng)
+    if niveau == 4:
+        return questions_niveau_4(rng)
     return []
 
 

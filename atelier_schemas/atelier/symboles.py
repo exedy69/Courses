@@ -195,14 +195,15 @@ def svg(id_symbole: str, couleur: str = "#202124", broches=None,
     """SVG complet du symbole, prêt pour QSvgRenderer.
 
     ``broches`` : noms des 4 broches d'un circuit intégré (« ci »).
-    ``lettres=False`` retire les repères D/G/S d'un transistor (utile quand
-    le symbole est tourné : les lettres seraient couchées).
+    ``lettres=False`` retire les repères D/G/S d'un transistor et les numéros
+    d'un connecteur (utile quand le symbole est tourné : ils seraient
+    couchés ou à l'envers).
     """
     sym = SYMBOLES[id_symbole]
     noms = list(broches or ["", "", "", ""]) + ["", "", "", ""]
     corps = sym.corps
-    if not lettres and sym.prefixe == "Q":
-        corps = re.sub(r"<text[^>]*>[DGS]</text>", "", corps)
+    if not lettres and sym.prefixe in ("Q", "J"):
+        corps = re.sub(r"<text[^>]*>[DGS123]</text>", "", corps)
     corps = (corps.replace("{c}", couleur)
              .replace("{p1}", noms[0]).replace("{p2}", noms[1])
              .replace("{p3}", noms[2]).replace("{p4}", noms[3]))

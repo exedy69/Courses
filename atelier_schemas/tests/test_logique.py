@@ -10,7 +10,7 @@ from pathlib import Path
 
 from atelier import contenu
 from atelier.progression import Progression
-from atelier.quiz import CHOIX, Session
+from atelier.quiz import CHOIX, ORDRE, Session
 from atelier.schemas import SCHEMAS, polylignes, position_borne, tourner
 from atelier.symboles import SYMBOLES, svg
 
@@ -69,6 +69,15 @@ class TestContenu(unittest.TestCase):
                         self.assertTrue(q.est_juste(q.bonne))
                         faux = (q.bonne + 1) % 4
                         self.assertFalse(q.est_juste(faux))
+                    elif q.type == ORDRE:
+                        textes = [c.texte for c in q.choix]
+                        self.assertEqual(sorted(textes), sorted(q.ordre))
+                        self.assertNotEqual(tuple(textes), q.ordre)
+                        bon = tuple(textes.index(e) for e in q.ordre)
+                        self.assertTrue(q.est_juste(bon))
+                        self.assertFalse(q.est_juste(bon[::-1]))
+                        self.assertFalse(q.est_juste(bon[:-1]))
+                        self.assertGreaterEqual(q.duree, 30)
                     else:
                         schema = SCHEMAS[q.schema]
                         genre, cibles = q.cible
@@ -113,7 +122,10 @@ class TestSchemas(unittest.TestCase):
                 for borne in SYMBOLES[comp.symbole].bornes:
                     with self.subTest(f"{comp.ref}.{borne}"):
                         p = position_borne(schema, f"{comp.ref}.{borne}")
-                        self.assertIn(p, extremites)
+                        if borne in comp.nc:
+                            self.assertNotIn(p, extremites)
+                        else:
+                            self.assertIn(p, extremites)
 
     def test_segments_orthogonaux_et_jonctions(self):
         for schema in SCHEMAS.values():
@@ -133,6 +145,21 @@ class TestSchemas(unittest.TestCase):
                     for x, y in seg:
                         self.assertTrue(0 <= x <= schema.largeur)
                         self.assertTrue(0 <= y <= schema.hauteur)
+
+
+class TestOrdre(unittest.TestCase):
+    def test_chrono_propre_et_lenteur(self):
+        q = next(q for q in contenu.questions(4, random.Random(0))
+                 if q.type == ORDRE)
+        bon = tuple([c.texte for c in q.choix].index(e) for e in q.ordre)
+        s = Session([q, q, q], chrono=20)
+        self.assertEqual(s.limite(), q.duree)
+        r = s.repondre(bon, 25)              # au-delà de 20 s mais permis
+        self.assertTrue(r.juste)
+        self.assertFalse(r.lent)
+        self.assertTrue(s.repondre(bon, q.duree * 0.8).lent)
+        self.assertFalse(s.repondre(bon, q.duree + 1).juste)
+        self.assertIn(" → ", q.texte_bonne_reponse())
 
 
 class TestSession(unittest.TestCase):

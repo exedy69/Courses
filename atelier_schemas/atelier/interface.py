@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QGridLayout, \
 
 from . import contenu, cours
 from .progression import Progression
-from .quiz import CHOIX, CLIC, Session
+from .quiz import CHOIX, CLIC, ORDRE, Session
 from .schemas import SCHEMAS
 from .symboles import SYMBOLES, svg
 from .vue_schema import FAUX, JUSTE, VueSchema
@@ -44,6 +44,9 @@ QPushButton[etat="juste"] { background: #e6f4ea; border: 2px solid #188038; }
 QPushButton[etat="faux"] { background: #fce8e6; border: 2px solid #d93025; }
 QPushButton[etat="juste"]:disabled, QPushButton[etat="faux"]:disabled {
     color: #1f2328; }
+QPushButton[etat="choisi"] { background: #e8f0fe; border: 2px solid #1a73e8;
+                             color: #1f2328; }
+QPushButton#etape { text-align: left; padding-left: 18px; }
 QProgressBar { border: none; background: #e3e6ea; border-radius: 4px;
                height: 8px; }
 QProgressBar::chunk { background: #1a73e8; border-radius: 4px; }
@@ -348,7 +351,33 @@ class PageQuiz(QWidget):
         self.vue.setMinimumHeight(300)
         self.vue.setFrameShape(QFrame.NoFrame)
         self.vue.clique.connect(self._clic_schema)
-        for w in (self.vide, self.cadre_symbole, self.vue):
+        # Exercice « remets dans l'ordre » : on clique les étapes une à une.
+        self.cadre_ordre = QWidget()
+        lo = QVBoxLayout(self.cadre_ordre)
+        lo.setContentsMargins(0, 0, 0, 0)
+        lo.setSpacing(8)
+        consigne = QLabel("Clique les étapes dans l'ordre (touches 1 à 8). "
+                          "La réponse est validée à la dernière étape.")
+        consigne.setObjectName("sousTitre")
+        lo.addWidget(consigne)
+        self.etapes = []
+        for i in range(8):
+            b = QPushButton()
+            b.setObjectName("etape")
+            b.setMinimumHeight(44)
+            b.clicked.connect(lambda _=False, i=i: self._choisir(i))
+            lo.addWidget(b)
+            self.etapes.append(b)
+        self.recommencer = QPushButton("Recommencer l'ordre")
+        self.recommencer.clicked.connect(self._recommencer_ordre)
+        lo.addWidget(self.recommencer, 0, Qt.AlignLeft)
+        lo.addStretch(1)
+        self.sequence = []
+        for i in range(4, 8):
+            QShortcut(QKeySequence(str(i + 1)), self,
+                      activated=lambda i=i: self._choisir(i))
+
+        for w in (self.vide, self.cadre_symbole, self.vue, self.cadre_ordre):
             self.zone.addWidget(w)
         racine.addWidget(self.zone, 1)
 
@@ -410,6 +439,9 @@ class PageQuiz(QWidget):
             self.vue.charger(SCHEMAS[q.schema])
             self.vue.reinitialiser()
             self.zone.setCurrentWidget(self.vue)
+        elif q.type == ORDRE:
+            self._recommencer_ordre()
+            self.zone.setCurrentWidget(self.cadre_ordre)
         elif q.symbole:
             self.symbole.load(QByteArray(
                 svg(q.symbole, broches=q.broches).encode()))
@@ -444,21 +476,46 @@ class PageQuiz(QWidget):
         self.horloge.start()
         self.minuteur.start()
 
+    def _recommencer_ordre(self):
+        q = self.session.question if self.session else None
+        if q is None or q.type != ORDRE or self.repondu:
+            return
+        self.sequence = []
+        for i, b in enumerate(self.etapes):
+            b.setVisible(i < len(q.choix))
+            if i < len(q.choix):
+                b.setEnabled(True)
+                b.setText(f"{i + 1}.  {q.choix[i].texte}")
+                b.setProperty("etat", "")
+                self._repolir(b)
+        self.recommencer.setEnabled(True)
+
     def _tic(self):
-        restant = self.session.chrono - self.horloge.elapsed() / 1000
-        self.barre.setValue(max(0, int(1000 * restant / self.session.chrono)))
+        limite = self.session.limite()
+        restant = limite - self.horloge.elapsed() / 1000
+        self.barre.setValue(max(0, int(1000 * restant / limite)))
         urgent = restant < 5
         if self.barre.property("urgent") != urgent:
             self.barre.setProperty("urgent", urgent)
             self._repolir(self.barre)
         if restant <= 0:
-            self._valider(None, temps=self.session.chrono)
+            self._valider(None, temps=limite)
 
     def _choisir(self, i):
         q = self.session.question if self.session else None
-        if (not self.repondu and q is not None and q.type == CHOIX
-                and i < len(q.choix) and self.isVisible()):
+        if (self.repondu or q is None or i >= len(q.choix)
+                or not self.isVisible()):
+            return
+        if q.type == CHOIX:
             self._valider(i)
+        elif q.type == ORDRE and i not in self.sequence:
+            self.sequence.append(i)
+            b = self.etapes[i]
+            b.setText(f"{len(self.sequence)} ·  {q.choix[i].texte}")
+            b.setProperty("etat", "choisi")
+            self._repolir(b)
+            if len(self.sequence) == len(q.choix):
+                self._valider(tuple(self.sequence))
 
     def _clic_schema(self, genre, ident):
         if not self.repondu:
@@ -480,6 +537,15 @@ class PageQuiz(QWidget):
                 elif i == reponse:
                     b.setProperty("etat", "faux")
                 self._repolir(b)
+        elif q.type == ORDRE:
+            self.recommencer.setEnabled(False)
+            for rang, i in enumerate(reponse or ()):
+                b = self.etapes[i]
+                b.setProperty("etat", "juste" if q.choix[i].texte
+                              == q.ordre[rang] else "faux")
+                self._repolir(b)
+            for b in self.etapes:
+                b.setEnabled(False)
         else:
             self.vue.actif = False
             genre, ids = q.cible
@@ -501,6 +567,11 @@ class PageQuiz(QWidget):
         if q.type == CHOIX and q.choix[q.bonne].symbole:
             entete = entete.replace(q.texte_bonne_reponse(),
                                     "le symbole encadré en vert")
+        if q.type == ORDRE and not r.juste:
+            entete = entete.replace(
+                f"réponse : {q.texte_bonne_reponse()}.",
+                "bon ordre :<ol style='margin:2px 0'>" + "".join(
+                    f"<li>{e}</li>" for e in q.ordre) + "</ol>")
         self.retour.setText(f"{entete}<br>{q.explication}")
         self.compteur.setText(
             f"Question {self.session.index}/{len(self.session.questions)} "
