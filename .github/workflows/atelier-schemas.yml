@@ -1,0 +1,33 @@
+name: Atelier schémas (tests Python)
+
+on:
+  push:
+    paths: ['atelier_schemas/**', '.github/workflows/atelier-schemas.yml']
+  pull_request:
+    paths: ['atelier_schemas/**', '.github/workflows/atelier-schemas.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: atelier_schemas
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      # Bibliothèques nécessaires à Qt en mode hors écran.
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+
+      - run: python3 -m pip install -r requirements.txt pyflakes
+
+      - run: python3 -m pyflakes atelier tests
+
+      - run: python3 -m unittest discover -s tests -t . -v
+        env:
+          QT_QPA_PLATFORM: offscreen

@@ -11,6 +11,7 @@ Appli Android personnelle (Flutter), cible unique : Xiaomi 17 Ultra (HyperOS 3 /
 - `lib/data/` : `recettes.dart` (30 recettes), `durees.dart` (durées indicatives).
 - `lib/services/` : moteur de suggestions, notifications, réglages (SharedPreferences ; jeton dans `flutter_secure_storage`), catalogue (Open * Facts), synchro (`SyncBackend` abstrait + `SyncGoogleSheets` + `SyncService`).
 - `lib/screens/`, `lib/widgets/` : UI.
+- `atelier_schemas/` : projet **indépendant** (Python/PySide6) d'apprentissage des schémas de cartes mères Mac ; voir son README. Tests : `cd atelier_schemas && QT_QPA_PLATFORM=offscreen python3 -m unittest discover -s tests -t .` (CI séparée `atelier-schemas.yml`). Schémas inventés uniquement, jamais de schéma Apple réel.
 - `apps_script/Code.gs` : script Google déployé à la main par l'utilisateur ; `apps_script/test_code_gs.js` le teste avec un faux Google Sheets.
 
 ## Commandes
