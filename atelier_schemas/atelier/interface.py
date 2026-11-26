@@ -1,4 +1,4 @@
-"""Fenêtre principale : accueil, quiz chronométré, résultats."""
+"""Fenêtre principale : accueil, cours, quiz chronométré, résultats."""
 
 from __future__ import annotations
 
@@ -13,9 +13,10 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import QApplication, QFrame, QGridLayout, \
     QHBoxLayout, QLabel, QMainWindow, QProgressBar, QPushButton, \
-    QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget
+    QScrollArea, QSizePolicy, QStackedWidget, QTextBrowser, QVBoxLayout, \
+    QWidget
 
-from . import contenu
+from . import contenu, cours
 from .progression import Progression
 from .quiz import CHOIX, CLIC, Session
 from .schemas import SCHEMAS
@@ -47,6 +48,9 @@ QProgressBar { border: none; background: #e3e6ea; border-radius: 4px;
                height: 8px; }
 QProgressBar::chunk { background: #1a73e8; border-radius: 4px; }
 QProgressBar[urgent="true"]::chunk { background: #d93025; }
+QTextBrowser#lecture { background: #ffffff; border: 1px solid #d8dbe0;
+                       border-radius: 10px; padding: 14px 18px;
+                       font-size: 15px; }
 """
 
 
@@ -135,6 +139,7 @@ class PageAccueil(QWidget):
 
         _vider(self.liste)
         rng = random.Random(0)
+        self.liste.addWidget(self._carte_cours(prog, rng))
         for niveau, (nom, description) in contenu.NIVEAUX.items():
             carte = _carte()
             ligne = QHBoxLayout(carte)
@@ -178,6 +183,117 @@ class PageAccueil(QWidget):
             h.setWordWrap(True)
             self.liste.addWidget(h)
         self.liste.addStretch(1)
+
+    def _carte_cours(self, prog, rng):
+        carte = _carte()
+        ligne = QHBoxLayout(carte)
+        ligne.setContentsMargins(18, 14, 18, 14)
+        textes = QVBoxLayout()
+        textes.addWidget(QLabel(f"<b>Cours · {cours.TITRE}</b>"))
+        d = QLabel(f"{cours.RESUME} {len(cours.CHAPITRES)} chapitres, puis "
+                   f"un quiz.")
+        d.setObjectName("sousTitre")
+        d.setWordWrap(True)
+        textes.addWidget(d)
+        ids = [q.id for q in contenu.questions(cours.NIVEAU_COURS, rng)]
+        s = prog.stats_niveau(cours.NIVEAU_COURS, ids)
+        info = QLabel(f"Quiz : {s['acquises']}/{s['total']} cartes acquises "
+                      f"· {s['dues']} à revoir")
+        info.setObjectName("sousTitre")
+        textes.addWidget(info)
+        ligne.addLayout(textes, 1)
+        lire = QPushButton("Lire le cours")
+        lire.setObjectName("principal")
+        lire.clicked.connect(self.fenetre.lire_cours)
+        quiz = QPushButton("Quiz")
+        quiz.clicked.connect(
+            lambda: self.fenetre.lancer_niveau(cours.NIVEAU_COURS))
+        ligne.addWidget(lire, 0, Qt.AlignVCenter)
+        ligne.addWidget(quiz, 0, Qt.AlignVCenter)
+        return carte
+
+
+# ---------------------------------------------------------------------------
+
+
+class PageCours(QWidget):
+    """Lecture du cours, chapitre par chapitre."""
+
+    def __init__(self, fenetre):
+        super().__init__()
+        self.fenetre = fenetre
+        self.index = 0
+        self.setObjectName("fond")
+        racine = QVBoxLayout(self)
+        racine.setContentsMargins(28, 20, 28, 20)
+        racine.setSpacing(12)
+
+        haut = QHBoxLayout()
+        retour = QPushButton("← Accueil")
+        retour.clicked.connect(fenetre.afficher_accueil)
+        titre = QLabel(f"Cours · {cours.TITRE}")
+        titre.setObjectName("sousTitre")
+        self.compteur = QLabel()
+        haut.addWidget(retour)
+        haut.addWidget(titre, 1)
+        haut.addWidget(self.compteur)
+        racine.addLayout(haut)
+
+        self.titre = QLabel()
+        self.titre.setObjectName("titre")
+        racine.addWidget(self.titre)
+
+        self.texte = QTextBrowser()
+        self.texte.setObjectName("lecture")
+        self.texte.setOpenLinks(False)
+        racine.addWidget(self.texte, 3)
+
+        self.vue = VueSchema()
+        self.vue.setMinimumHeight(240)
+        self.vue.setFrameShape(QFrame.NoFrame)
+        racine.addWidget(self.vue, 2)
+        self.legende = QLabel()
+        self.legende.setObjectName("sousTitre")
+        racine.addWidget(self.legende)
+
+        bas = QHBoxLayout()
+        self.precedent = QPushButton("← Chapitre précédent")
+        self.precedent.clicked.connect(lambda: self.aller(self.index - 1))
+        self.suivant = QPushButton()
+        self.suivant.setObjectName("principal")
+        self.suivant.clicked.connect(self._suivant)
+        bas.addWidget(self.precedent)
+        bas.addStretch(1)
+        bas.addWidget(self.suivant)
+        racine.addLayout(bas)
+        self.aller(0)
+
+    def aller(self, index):
+        self.index = max(0, min(index, len(cours.CHAPITRES) - 1))
+        ch = cours.CHAPITRES[self.index]
+        dernier = self.index == len(cours.CHAPITRES) - 1
+        self.compteur.setText(
+            f"Chapitre {self.index + 1}/{len(cours.CHAPITRES)}")
+        self.titre.setText(ch.titre)
+        self.texte.setHtml(ch.html)
+        self.precedent.setEnabled(self.index > 0)
+        self.suivant.setText("Passer au quiz →" if dernier
+                             else "Chapitre suivant →")
+        illustre = ch.schema is not None
+        self.vue.setVisible(illustre)
+        self.legende.setVisible(illustre)
+        if illustre:
+            self.vue.charger(SCHEMAS[ch.schema])
+            self.vue.actif = False
+            for genre, ident, couleur in ch.surlignage:
+                self.vue.marquer(genre, ident, couleur)
+            self.legende.setText(ch.legende)
+
+    def _suivant(self):
+        if self.index == len(cours.CHAPITRES) - 1:
+            self.fenetre.lancer_niveau(cours.NIVEAU_COURS)
+        else:
+            self.aller(self.index + 1)
 
 
 # ---------------------------------------------------------------------------
@@ -511,9 +627,13 @@ class FenetrePrincipale(QMainWindow):
         self.accueil = PageAccueil(self)
         self.quiz = PageQuiz(self)
         self.resultats = PageResultats(self)
-        for p in (self.accueil, self.quiz, self.resultats):
+        self.cours = PageCours(self)
+        for p in (self.accueil, self.quiz, self.resultats, self.cours):
             self.pile.addWidget(p)
         self._relancer = None
+
+    def lire_cours(self):
+        self.pile.setCurrentWidget(self.cours)
 
     def afficher_accueil(self):
         self.quiz.arreter()
@@ -532,8 +652,11 @@ class FenetrePrincipale(QMainWindow):
         qs = contenu.questions(niveau, self.rng)
         choisies = self.progression.choisir(qs, QUESTIONS_PAR_SESSION,
                                             self.rng)
-        nom = contenu.NIVEAUX[niveau][0]
-        self.demarrer(Session(choisies, titre=f"Niveau {niveau} · {nom}"))
+        if niveau == cours.NIVEAU_COURS:
+            titre = f"Cours · {cours.TITRE}"
+        else:
+            titre = f"Niveau {niveau} · {contenu.NIVEAUX[niveau][0]}"
+        self.demarrer(Session(choisies, titre=titre))
 
     def lancer_revision(self):
         self._relancer = self.lancer_revision

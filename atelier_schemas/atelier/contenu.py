@@ -14,6 +14,7 @@ from __future__ import annotations
 import random
 import re
 
+from .cours import NIVEAU_COURS, questions_cours
 from .quiz import CLIC, Choix, Question, melanger_choix
 from .symboles import SYMBOLES
 
@@ -385,6 +386,8 @@ def questions_niveau_2(rng: random.Random) -> list:
 
 
 def questions(niveau: int, rng: random.Random) -> list:
+    if niveau == NIVEAU_COURS:
+        return questions_cours(rng)
     if niveau == 1:
         return questions_niveau_1(rng)
     if niveau == 2:
@@ -393,4 +396,5 @@ def questions(niveau: int, rng: random.Random) -> list:
 
 
 def toutes_les_questions(rng: random.Random) -> list:
-    return [q for n in NIVEAUX_JOUABLES for q in questions(n, rng)]
+    return [q for n in (NIVEAU_COURS, *NIVEAUX_JOUABLES)
+            for q in questions(n, rng)]

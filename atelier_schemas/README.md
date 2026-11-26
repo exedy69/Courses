@@ -12,6 +12,7 @@ carte mère Mac, en préparation au dépannage de MacBook.
 
 | Niveau | Contenu | État |
 |---|---|---|
+| Cours · Analyser avant de réparer | 7 chapitres à lire : pourquoi une méthode, questionner et inspecter, observer la consommation (ampèremètre USB-C), suivre la chaîne d'alimentation (premier rail absent, entrée → EN → sortie → PGOOD, exemple illustré sur schéma), mesurer correctement (tension, mode diode), localiser le fautif (injection de tension), réparer et vérifier | ✅ 17 cartes de quiz |
 | 1. Symboles et lecture de base | 17 symboles (résistance, condensateurs, diodes, MOSFET N/P, bobine, fusible, quartz, connecteur, CI…), lettres de référence (R, C, L, D, Q, U, F, J, Y, TP), repérage sur schéma | ✅ 50 cartes |
 | 2. Conventions des schémas Mac | Préfixe PP, lecture des tensions (PP3V3 → 3,3 V), suffixes G3H/S5/S3/S0, `_L` et `#`, `_EN`, `_PGOOD`, `PM_`, renvois de pages, NOSTUFF, XW, valeurs de composants, clics sur les nets d'un schéma | ✅ 42 cartes |
 | 3. Suivre un chemin | — | bientôt |
@@ -66,6 +67,7 @@ schéma).
 atelier/
   symboles.py    symboles SVG + position de leurs bornes
   schemas.py     schémas pédagogiques (composants, nets, géométrie)
+  cours.py       cours « Analyser avant de réparer » + son quiz
   contenu.py     questions des niveaux 1 et 2
   quiz.py        session chronométrée, correction (sans Qt)
   progression.py SQLite, boîtes de Leitner
